@@ -1,0 +1,36 @@
+FROM golang:1.9-alpine
+
+ENV GOPATH=/go \
+    PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
+
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+RUN set -ex \
+  && echo "export PATH=$PATH" >> /etc/profile.d/set_path.sh
+
+
+RUN set -ex \
+  && apk add --no-cache --update \
+    bash \
+    ca-certificates \
+    git \
+    gcc \
+    make \
+    musl-dev \
+    postgresql-client \
+  && apk add --update --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community shadow
+
+RUN set -ex \
+  && groupadd -g "${GROUP_ID}" docker \
+  && useradd -r -m -N -u "${USER_ID}" -g docker -s /bin/sh -d /home/docker docker \
+  && mkdir -p /home/docker \
+  && chown -R docker:docker /home/docker
+
+RUN set -ex \
+  && go get -u \
+    github.com/lib/pq \
+    github.com/mattes/migrate \
+    github.com/jteeuwen/go-bindata/...
+
+CMD ["sh"]
