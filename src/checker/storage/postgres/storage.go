@@ -14,10 +14,15 @@ import (
 	"checker/storage"
 )
 
-const fetchLimit = 1000
+const (
+	fetchLimit = 1000
+	queueSize = 100
+	queueTimeout = 10 * time.Second
+)
 
 type store struct {
-	db *sql.DB
+	db       *sql.DB
+	logsChan chan *storage.Log
 }
 
 // NewStore init store and apply migrations
@@ -31,16 +36,25 @@ func NewStore(dbConfig *config.DSNConfig) (storage.Store, error) {
 		return nil, fmt.Errorf("couldn't apply migrations for current database, err: %s", err.Error())
 	}
 
-	return &store{db: db}, nil
+	store := &store{
+		db:       db,
+		logsChan: make(chan *storage.Log, queueSize),
+	}
+
+	go store.logsStoreWorker()
+
+	return store, nil
 }
 
 // AddLog adds log entity to database storage
 func (s *store) AddLog(sLog *storage.Log) error {
-	_, err := s.db.Exec(
-		"INSERT INTO checker_log(created_at, url, successful) VALUES ($1, $2, $3)",
-		sLog.CreatedAt, sLog.Url, sLog.IsHealthy,
-	)
-	return err
+	select {
+		case s.logsChan <- sLog:
+		case <- time.After(queueTimeout):
+			return fmt.Errorf("timeout: queue is full, log for url: '%s' is skipped", sLog.Url)
+	}
+
+	return nil
 }
 
 // FetchLogs retrieves ordered list of resources status
@@ -87,6 +101,21 @@ func (s *store) FetchLogs(start, end time.Time, url string) ([]*storage.Log, err
 	}
 
 	return sLogs, nil
+}
+
+func (s *store) logsStoreWorker() {
+	for {
+		sLog := <- s.logsChan
+
+		_, err := s.db.Exec(
+			"INSERT INTO checker_log(created_at, url, successful) VALUES ($1, $2, $3)",
+			sLog.CreatedAt, sLog.Url, sLog.IsHealthy,
+		)
+
+		if err != nil {
+			log.Println(err.Error())
+		}
+	}
 }
 
 // Close is helper func to use with 'defer' and handling error

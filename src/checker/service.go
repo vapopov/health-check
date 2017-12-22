@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
-	"net/http"
 	"os"
 	"time"
 
@@ -17,17 +15,20 @@ import (
 
 const (
 	parallelRunMaxQty = 2000
+	maxWorkers        = 200
 )
 
 // Service implements resources availability checking and preparing base statistics
 type Service struct {
-	store storage.Store
+	store      storage.Store
+	workerPool chan LogChannel
 }
 
 // NewService constructor of service
 func NewService(store storage.Store) *Service {
 	return &Service{
-		store: store,
+		store:      store,
+		workerPool: make(chan LogChannel, maxWorkers),
 	}
 }
 
@@ -38,6 +39,11 @@ func (s *Service) Watch(ctx context.Context, chConfig *config.CheckerConfig) {
 		log.Fatal(err)
 	}
 	defer sourcesFile.Close()
+
+	for i := 0; i < cap(s.workerPool); i++ {
+		worker := NewWorker(s.store, s.workerPool)
+		worker.Start(ctx)
+	}
 
 	var parallelRun int
 	scanner := bufio.NewScanner(sourcesFile)
@@ -116,28 +122,12 @@ func (s *Service) spawnCheck(ctx context.Context, url string, interval time.Dura
 		for {
 			select {
 			case requestTime := <-ticker.C:
-				s.store.AddLog(&storage.Log{CreatedAt: requestTime, Url: url, IsHealthy: s.checkResource(url)})
+				logChannel := <-s.workerPool
+				logChannel <- storage.Log{CreatedAt: requestTime, Url: url}
 			case <-ctx.Done():
 				ticker.Stop()
 				return
 			}
 		}
 	}()
-}
-
-func (s *Service) checkResource(url string) bool {
-	transport := &http.Transport{
-		MaxIdleConns:    1,
-		IdleConnTimeout: 10 * time.Second,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 0,
-			DualStack: true,
-		}).DialContext,
-	}
-
-	client := &http.Client{Transport: transport}
-	resp, err := client.Head(url)
-
-	return err == nil && resp.StatusCode < 400
 }
