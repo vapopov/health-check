@@ -15,9 +15,8 @@ MIGRATIONS_PATH = src/checker/storage/postgres/migrations
 .PHONY:install-deps
 install-deps:
 	$(info * Install dependencies)
-	@go get -u github.com/lib/pq
-	@go get -u github.com/mattes/migrate
-	@go get -u github.com/jteeuwen/go-bindata/...
+	cd src && glide install
+	cd src && glide rebuild
 
 .PHONY: build-local
 build-local: migrate
@@ -44,7 +43,7 @@ run-base-stats: migrate build-local-cli
 .PHONY: migrate
 migrate:
 	$(info * Creating migration for go-bindata)
-	@go-bindata -pkg migrations -ignore "\w+\.go" -prefix "$(MIGRATIONS_PATH)" -o $(MIGRATIONS_PATH)/bindata.go $(MIGRATIONS_PATH)
+	@bin/go-bindata -pkg migrations -ignore "\w+\.go" -prefix "$(MIGRATIONS_PATH)" -o $(MIGRATIONS_PATH)/bindata.go $(MIGRATIONS_PATH)
 
 
 ## Docker build rules
@@ -53,11 +52,11 @@ migrate:
 build-go: build/Dockerfile.build
 	$(info * Building docker build container $(NS)/$(IMAGE_NAME_GO))
 	@docker build -f build/Dockerfile.build -t $(NS)/$(IMAGE_NAME_GO):$(VERSION) .
-	@docker run --rm -v "$(PWD)":/app -w /app $(NS)/$(IMAGE_NAME_GO):$(VERSION) make install-deps build-local build-local-cli
 
 .PHONY: build
 build: build-go build/Dockerfile
 	$(info * Building $(VERSION) version of $(NS)/$(IMAGE_NAME))
+	@docker run --rm -v "$(PWD)":/app -w /app $(NS)/$(IMAGE_NAME_GO):$(VERSION) make install-deps build-local build-local-cli
 	@docker build -f build/Dockerfile -t $(NS)/$(IMAGE_NAME):$(VERSION) .
 
 .PHONY: push

@@ -9,7 +9,6 @@ ARG GROUP_ID=1000
 RUN set -ex \
   && echo "export PATH=$PATH" >> /etc/profile.d/set_path.sh
 
-
 RUN set -ex \
   && apk add --no-cache --update \
     bash \
@@ -27,10 +26,27 @@ RUN set -ex \
   && mkdir -p /home/docker \
   && chown -R docker:docker /home/docker
 
+# Install build dependencies
 RUN set -ex \
-  && go get -u \
-    github.com/lib/pq \
-    github.com/mattes/migrate \
-    github.com/jteeuwen/go-bindata/...
+ && apk add --no-cache --virtual .build-deps \
+        curl make \
+    \
+ # Download and unpack Glide sources
+ && curl -L -o /tmp/glide.tar.gz \
+          https://github.com/Masterminds/glide/archive/v0.13.1.tar.gz \
+ && tar -xzf /tmp/glide.tar.gz -C /tmp \
+ && mkdir -p $GOPATH/src/github.com/Masterminds \
+ && mv /tmp/glide-* $GOPATH/src/github.com/Masterminds/glide \
+ && cd $GOPATH/src/github.com/Masterminds/glide \
+    \
+ # Build and install Glide executable
+ && make install \
+    \
+ # Install Glide license
+ && mkdir -p /usr/local/share/doc/glide \
+ && cp LICENSE /usr/local/share/doc/glide/ \
+    \
+ # Cleanup unnecessary files
+ && apk del .build-deps
 
 CMD ["sh"]

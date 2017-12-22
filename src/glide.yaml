@@ -1,0 +1,9 @@
+package: checker
+import:
+- package: github.com/lib/pq
+- package: github.com/mattes/migrate
+  version: ^3.0.1
+- package: github.com/jteeuwen/go-bindata
+  version: ^3.0.7
+  subpackages:
+  - 'go-bindata'
